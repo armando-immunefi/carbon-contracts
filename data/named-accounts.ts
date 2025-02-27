@@ -153,6 +153,19 @@ const telos = (address: string) => {
     };
 };
 
+const berachain = (address: string) => {
+    if (TENDERLY_NETWORK_ID === chainIds[DeploymentNetwork.Berachain]) {
+        return {
+            [DeploymentNetwork.Telos]: address,
+            [DeploymentNetwork.Tenderly]: address,
+            [DeploymentNetwork.TenderlyTestnet]: address
+        };
+    }
+    return {
+        [DeploymentNetwork.Berachain]: address
+    };
+};
+
 const TestNamedAccounts = {
     ethWhale: {
         ...getAddress(mainnet, '0xDA9dfA130Df4dE4673b89022EE50ff26f6EA73Cf'),
@@ -199,7 +212,8 @@ const TokenNamedAccounts = {
         ...getAddress(mainnet, '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'),
         ...getAddress(base, '0x4200000000000000000000000000000000000006'),
         ...getAddress(arbitrum, '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1'),
-        ...getAddress(mantle, '0xdEAddEaDdeadDEadDEADDEAddEADDEAddead1111')
+        ...getAddress(mantle, '0xdEAddEaDdeadDEadDEADDEAddEADDEAddead1111'),
+        ...getAddress(berachain, '0x2F6F07CDcf3588944Bf4C42aC74ff24bF56e7590') // stargate weth
     },
     usdc: {
         ...getAddress(mainnet, '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'),
@@ -240,7 +254,8 @@ const BancorNamedAccounts = {
         ...getAddress(mantle, '0x45d2e25C04F43A06f6C3e21e4f39B860D05a7aC8'),
         ...getAddress(linea, '0x45d2e25C04F43A06f6C3e21e4f39B860D05a7aC8'),
         ...getAddress(sei, '0x773B75CfB146bd5d1095fa9d6d45637f02B05119'),
-        ...getAddress(telos, '0x8cE318919438982514F9f479FDfB40D32C6ab749')
+        ...getAddress(telos, '0x8cE318919438982514F9f479FDfB40D32C6ab749'),
+        ...getAddress(berachain, '0x45d2e25C04F43A06f6C3e21e4f39B860D05a7aC8')
     }
 };
 
@@ -268,6 +283,7 @@ export const NamedAccounts = {
         ...getAddress(base, 'ledger://0x0f28D58c00F9373C00811E9576eE803B4eF98abe'),
         ...getAddress(arbitrum, 'ledger://0x0f28D58c00F9373C00811E9576eE803B4eF98abe'),
         ...getAddress(mantle, 'ledger://0x5bEBA4D3533a963Dedb270a95ae5f7752fA0Fe22'),
+        ...getAddress(berachain, '0xe01EA58F6DA98488E4C92fD9b3E49607639C5370'),
         default: 0
     },
     deployerV2: { ...getAddress(mainnet, '0xdfeE8DC240c6CadC2c7f7f9c257c259914dEa84E') },
