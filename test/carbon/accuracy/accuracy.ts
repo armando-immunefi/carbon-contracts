@@ -1,12 +1,15 @@
 import Contracts, { TestStrategies } from '../../../components/Contracts';
 import { encodeOrder } from '../../utility/carbon-sdk';
+import { expect } from 'chai';
+import Decimal from 'decimal.js';
+import { BigNumber } from 'ethers';
+
+// created via https://github.com/bancorprotocol/carbon-simulator/blob/main/benchmark/test_trade.py
+// located at https://github.com/bancorprotocol/carbon-simulator/tree/main/benchmark/resources/trade
 import ArbitraryTrade from './data/ArbitraryTrade.json';
 import EthUsdcTrade from './data/EthUsdcTrade.json';
 import ExtremeSrcTrade from './data/ExtremeSrcTrade.json';
 import ExtremeTrgTrade from './data/ExtremeTrgTrade.json';
-import { expect } from 'chai';
-import Decimal from 'decimal.js';
-import { BigNumber } from 'ethers';
 
 const tests = [...ArbitraryTrade, ...EthUsdcTrade, ...ExtremeSrcTrade, ...ExtremeTrgTrade];
 
@@ -36,14 +39,14 @@ describe('Accuracy stress test', () => {
     for (const [index, test] of tests.entries()) {
         it(`test ${index + 1} out of ${tests.length}`, async () => {
             const order = encodeOrder({
-                liquidity: new Decimal(test.liquidity),
-                lowestRate: new Decimal(test.lowestRate),
-                highestRate: new Decimal(test.highestRate),
-                marginalRate: new Decimal(test.marginalRate)
+                liquidity: new Decimal(test.order.liquidity),
+                lowestRate: new Decimal(test.order.lowestRate),
+                highestRate: new Decimal(test.order.highestRate),
+                marginalRate: new Decimal(test.order.marginalRate)
             });
-            const amount = BigNumber.from(test.inputAmount);
-            const tradeRPC = (contract as any)[`tradeBy${test.tradeBy}`](order, amount);
-            const expected = BigNumber.from(test.implReturn);
+            const amount = BigNumber.from(test.amount);
+            const tradeRPC = (contract as any)[test.method](order, amount);
+            const expected = BigNumber.from(test.output.impl);
             expect(await tradeRPC).to.eq(expected);
         });
     }
