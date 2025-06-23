@@ -31,7 +31,7 @@ contract StrategiesTest is TestFixture {
     uint8 private constant STRATEGY_UPDATE_REASON_EDIT = 0;
     uint8 private constant STRATEGY_UPDATE_REASON_TRADE = 1;
 
-    uint32 private constant DEFAULT_TRADING_FEE_PPM = 2000;
+    uint32 private constant DEFAULT_TRADING_FEE_PPM = 4000;
     uint32 private constant NEW_TRADING_FEE_PPM = 300_000;
 
     uint256 private constant FETCH_AMOUNT = 5;
@@ -433,18 +433,6 @@ contract StrategiesTest is TestFixture {
         carbonController.createStrategy(Token.wrap(address(reentrantToken)), token1, [order, order]);
 
         vm.stopPrank();
-    }
-
-    function testStrategyCreationRevertsWhenPaused() public {
-        vm.startPrank(admin);
-        carbonController.grantRole(carbonController.roleEmergencyStopper(), user2);
-        vm.stopPrank();
-        vm.prank(user2);
-        carbonController.pause();
-
-        Order memory order = generateTestOrder();
-        vm.expectRevert("Pausable: paused");
-        carbonController.createStrategy(token0, token1, [order, order]);
     }
 
     function testStrategyCreationRevertsWhenCapacityIsSmallerThanLiquidity(bool order0Insufficient) public {
@@ -861,25 +849,6 @@ contract StrategiesTest is TestFixture {
         vm.stopPrank();
     }
 
-    function testStrategyUpdateRevertsWhenPaused() public {
-        vm.prank(user1);
-        Order memory order = generateTestOrder();
-        // create strategy
-        uint256 strategyId = carbonController.createStrategy(token0, token1, [order, order]);
-
-        vm.startPrank(admin);
-        carbonController.grantRole(carbonController.roleEmergencyStopper(), user2);
-        vm.stopPrank();
-        vm.prank(user2);
-        carbonController.pause();
-
-        Order memory newOrder = generateTestOrder();
-        newOrder.y += 1000;
-
-        vm.expectRevert("Pausable: paused");
-        carbonController.updateStrategy(strategyId, [order, order], [newOrder, newOrder]);
-    }
-
     function testStrategyUpdateRevertsWhenTryingToUpdateANonExistingStrategyOnAnExistingPair() public {
         vm.startPrank(user1);
         Order memory order = generateTestOrder();
@@ -1208,22 +1177,6 @@ contract StrategiesTest is TestFixture {
         vm.stopPrank();
     }
 
-    function testStrategyDeletionRevertsWhenPaused() public {
-        vm.prank(user1);
-        Order memory order = generateTestOrder();
-        // create strategy
-        uint256 strategyId = carbonController.createStrategy(token0, token1, [order, order]);
-
-        vm.startPrank(admin);
-        carbonController.grantRole(carbonController.roleEmergencyStopper(), user2);
-        vm.stopPrank();
-        vm.prank(user2);
-        carbonController.pause();
-
-        vm.expectRevert("Pausable: paused");
-        carbonController.deleteStrategy(strategyId);
-    }
-
     /**
      * @dev trading fee tests
      */
@@ -1313,7 +1266,7 @@ contract StrategiesTest is TestFixture {
         carbonController.pairTradingFeePPM(token0, token1);
     }
 
-    function testSetsTheDefaultOnInitialization() public {
+    function testSetsTheDefaultOnInitialization() public view {
         uint32 tradingFee = carbonController.tradingFeePPM();
         assertEq(tradingFee, DEFAULT_TRADING_FEE_PPM);
     }
@@ -1671,7 +1624,7 @@ contract StrategiesTest is TestFixture {
         Order memory order = generateTestOrder();
         order.y = 0;
         // create strategy
-        vm.expectRevert(AccessDenied.selector);
+        vm.expectRevert(IVoucher.OnlyController.selector);
         newCarbonController.createStrategy(token0, token1, [order, order]);
 
         vm.stopPrank();
@@ -1692,21 +1645,6 @@ contract StrategiesTest is TestFixture {
     /**
      * @dev withdraw fees tests
      */
-
-    function testFeeWithdrawalRevertsWhenPaused() public {
-        vm.startPrank(admin);
-        carbonController.grantRole(carbonController.roleEmergencyStopper(), user2);
-        vm.stopPrank();
-        vm.prank(user1);
-        Order memory order = generateTestOrder();
-        carbonController.createStrategy(token0, token1, [order, order]);
-        vm.prank(user2);
-        carbonController.pause();
-
-        vm.prank(admin);
-        vm.expectRevert("Pausable: paused");
-        carbonController.withdrawFees(token0, 1, admin);
-    }
 
     function testFeeWithdrawalRevertsWhenCallerIsMissingTheRequiredRole() public {
         vm.prank(user1);

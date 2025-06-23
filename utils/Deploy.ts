@@ -2,12 +2,10 @@ import { ArtifactData } from '../components/ContractBuilder';
 import { CarbonController, CarbonPOL, CarbonVortex, IVersioned, ProxyAdmin, Voucher } from '../components/Contracts';
 import Logger from '../utils/Logger';
 import { DeploymentNetwork, ZERO_BYTES } from './Constants';
-import { RoleIds } from './Roles';
-import { toWei } from './Types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { BigNumber, BigNumberish, Contract, ContractInterface, utils } from 'ethers';
 import fs from 'fs';
-import { glob } from 'glob';
+import glob from 'glob';
 import { config, deployments, ethers, getNamedAccounts, tenderly } from 'hardhat';
 import {
     Address,
@@ -16,6 +14,10 @@ import {
     ProxyOptions as DeployProxyOptions
 } from 'hardhat-deploy/types';
 import path from 'path';
+import { toWei } from './Types';
+import { Suite } from 'mocha';
+import chainIds from './chainIds.json';
+import { RoleIds } from './Roles';
 
 const {
     deploy: deployContract,
@@ -27,15 +29,23 @@ const {
     run
 } = deployments;
 
+interface Options {
+    skip?: () => boolean;
+    beforeDeployments?: () => Promise<void>;
+}
+
 const { AbiCoder } = utils;
 
 const tenderlyNetwork = tenderly.network();
 
 interface EnvOptions {
     TEST_FORK?: boolean;
+    TENDERLY_NETWORK_NAME?: string;
 }
 
-const { TEST_FORK: isTestFork }: EnvOptions = process.env as any as EnvOptions;
+const { TEST_FORK: isTestFork, TENDERLY_NETWORK_NAME = 'mainnet' }: EnvOptions = process.env as any as EnvOptions;
+
+const networkId = chainIds[TENDERLY_NETWORK_NAME as keyof typeof chainIds];
 
 enum NewInstanceName {
     CarbonController = 'CarbonController',
@@ -70,12 +80,8 @@ export const DeployedContracts = {
     ...DeployedNewContracts
 };
 
-export const isTenderlyFork = () => getNetworkName() === DeploymentNetwork.Tenderly;
-export const isTenderlyTestnet = () => getNetworkName() === DeploymentNetwork.TenderlyTestnet;
-export const isMainnet = () => getNetworkName() === DeploymentNetwork.Mainnet || isTenderly();
-export const isRinkeby = () => getNetworkName() === DeploymentNetwork.Rinkeby;
-export const isLive = () => (isMainnet() && !isTenderly()) || isRinkeby();
-export const isTenderly = () => isTenderlyFork() || isTenderlyTestnet();
+export const isTenderly = () => getNetworkName() === DeploymentNetwork.Tenderly;
+export const isLive = () => !isTenderly();
 
 const TEST_MINIMUM_BALANCE = toWei(10);
 const TEST_FUNDING = toWei(10);
@@ -181,7 +187,7 @@ interface DeployOptions extends BaseDeployOptions {
     proxy?: ProxyOptions;
 }
 
-const PROXY_CONTRACT = 'OptimizedTransparentProxy';
+const PROXY_CONTRACT = 'OptimizedTransparentUpgradeableProxy';
 const INITIALIZE = 'initialize';
 const POST_UPGRADE = 'postUpgrade';
 
@@ -221,7 +227,10 @@ const logParams = async (params: FunctionParams) => {
 
     for (const [i, arg] of args.entries()) {
         const input = fragment.inputs[i];
-        Logger.log(`    ${input.name} (${input.type}): ${arg.toString()}`);
+        if (!input) {
+            continue;
+        }
+        Logger.log(`    ${input.name} (${input.type}): ${arg?.toString()}`);
     }
 };
 
@@ -325,8 +334,7 @@ interface UpgradeProxyOptions extends DeployOptions {
 }
 
 export const upgradeProxy = async (options: UpgradeProxyOptions) => {
-    const { name, contract, from, value, args, postUpgradeArgs, contractArtifactData } =
-        options;
+    const { name, contract, from, value, args, postUpgradeArgs, contractArtifactData } = options;
     const contractName = contract ?? name;
 
     await fundAccount(from);
@@ -502,40 +510,29 @@ export const save = async (deployment: Deployment) => {
     }
 };
 
-interface ContractData {
-    name: string;
-    address: Address;
-}
-
 const verifyTenderlyFork = async (deployment: Deployment) => {
     // verify contracts on Tenderly only for mainnet or tenderly mainnet forks deployments
-    if (!isTenderlyFork() || isTestFork) {
+    if (!isTenderly()) {
         return;
     }
-
     const { name, contract, address, proxy, implementation } = deployment;
-
-    const contracts: ContractData[] = [];
     let contractAddress = address;
-
+    let contracts = [];
     if (proxy) {
         contracts.push({
             name: PROXY_CONTRACT,
             address
         });
-
         contractAddress = implementation!;
     }
-
     contracts.push({
         name: contract ?? name,
         address: contractAddress
     });
-
     for (const contract of contracts) {
         Logger.log('  verifying on tenderly', contract.name, 'at', contract.address);
 
-        await tenderlyNetwork.verify(contract);
+        await tenderly.verify(contract);
     }
 };
 
@@ -561,7 +558,8 @@ export const deploymentTagExists = (tag: string) => {
 const deploymentFileNameToTag = (filename: string) => Number(path.basename(filename).split('-')[0]).toString();
 
 export const getPreviousDeploymentTag = (tag: string) => {
-    const files = fs.readdirSync(config.paths.deploy[0]).sort();
+    const dir = path.join(config.paths.deploy[0], getNetworkNameById(networkId));
+    const files = fs.readdirSync(dir).sort();
 
     const index = files.map((f) => deploymentFileNameToTag(f)).lastIndexOf(tag);
     if (index === -1) {
@@ -572,8 +570,8 @@ export const getPreviousDeploymentTag = (tag: string) => {
 };
 
 export const getLatestDeploymentTag = () => {
-    const files = fs.readdirSync(config.paths.deploy[0]).sort();
-
+    const dir = path.join(config.paths.deploy[0], getNetworkNameById(networkId));
+    const files = fs.readdirSync(dir).sort();
     return Number(files[files.length - 1].split('-')[0]).toString();
 };
 
@@ -609,6 +607,21 @@ export const runPendingDeployments = async () => {
     });
 };
 
+export const getNetworkNameById = (networkId: number | undefined): string => {
+    if (networkId === undefined) {
+        return DeploymentNetwork.Mainnet;
+    }
+
+    // Find the network name by its ID
+    const networkName = (Object.keys(chainIds) as (keyof typeof chainIds)[]).find((key) => chainIds[key] === networkId);
+
+    if (!networkName) {
+        throw new Error(`Cannot find network with id: ${networkId}`);
+    }
+
+    return networkName;
+};
+
 export const getInstanceNameByAddress = (address: string): InstanceName => {
     const externalDeployments = config.external?.deployments![getNetworkName()];
     const deploymentsPath = externalDeployments ? externalDeployments[0] : path.join('deployments', getNetworkName());
@@ -627,4 +640,43 @@ export const getInstanceNameByAddress = (address: string): InstanceName => {
     }
 
     throw new Error(`Unable to find deployment for ${address}`);
+};
+
+export const describeDeployment = (
+    filename: string,
+    fn: (this: Suite) => void,
+    options: Options = {}
+): Suite | void => {
+    const { id, tag } = deploymentMetadata(filename);
+
+    const { skip = () => false, beforeDeployments = () => Promise.resolve() } = options;
+
+    // if we're running against a mainnet fork, ensure to skip tests for already existing deployments
+    if (skip() || deploymentTagExists(tag)) {
+        return describe.skip(id, fn);
+    }
+
+    return describe(id, async function (this: Suite) {
+        before(async () => {
+            if (isLive()) {
+                throw new Error('Unsupported network');
+            }
+
+            await beforeDeployments();
+        });
+
+        beforeEach(async () => {
+            if (isLive()) {
+                throw new Error('Unsupported network');
+            }
+
+            return run(tag, {
+                resetMemory: false,
+                deletePreviousDeployments: false,
+                writeDeploymentsToFiles: true
+            });
+        });
+
+        fn.apply(this);
+    });
 };
